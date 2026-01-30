@@ -15,7 +15,10 @@ setup(
                 "kernels/module.cpp",
                 "kernels/median_blur.cu",
             ],
-            extra_compile_args={"cxx": ["-O2"]},
+            extra_compile_args={
+                "cxx": ["-O2"],
+                "nvcc": ["--expt-extended-lambda", "-O2"]
+            },
         ),
     ],
     cmdclass={"build_ext": BuildExtension},
