@@ -5,7 +5,7 @@ import torch
 import fastcv
 import numpy as np
 
-kernel_size = 7
+kernel_size = 3
 
 def benchmark_blur(sizes=[1024, 2048, 4096], runs=50):
     results = []

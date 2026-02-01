@@ -2,8 +2,8 @@ import cv2
 import torch
 import fastcv
 
-kernel_size = 3
-filename = "artifacts/binary.jpg"
+kernel_size = 7
+filename = "artifacts/grayscale.jpg"
 
 img = cv2.imread(filename)
 img_tensor = torch.from_numpy(img).cuda()

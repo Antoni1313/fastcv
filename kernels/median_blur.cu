@@ -9,9 +9,9 @@
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/execution_policy.h>
 #include <thrust/reduce.h>
-#include <nvtx3/nvToolsExt.h>
+#include "nvtx3.hpp"
 
-#define MAX_KERNEL_SIZE 225
+#define MAX_KERNEL_SIZE 121
 
 using Pixel = unsigned char;
 
@@ -107,40 +107,55 @@ __global__ void medianBlurKernel(unsigned char *in, unsigned char *out, int w, i
 }
 
 torch::Tensor median_blur(torch::Tensor img, int KERNEL_SIZE) {
+    nvtxRangePushA("Input validation");
+
     if (KERNEL_SIZE < 3) {
         throw std::runtime_error("Min kernel size is 3");
     }
     if (KERNEL_SIZE % 2 == 0) {
         throw std::runtime_error("Kernel size must be odd");
     }
-    if (KERNEL_SIZE > 15) {
-        throw std::runtime_error("Kernel size is too big, max: 15");
+    if (KERNEL_SIZE > 11) {
+        throw std::runtime_error("Kernel size is too big, max: 11");
     }
 
     assert(img.device().type() == torch::kCUDA);
     assert(img.dtype() == torch::kByte);
 
+    nvtxRangePop();
+    nvtxRangePushA("Image info");
+
     const auto height = img.size(0);
     const auto width = img.size(1);
     const auto channels = img.size(2);
 
+    nvtxRangePop();
+    nvtxRangePushA("Kernels grid config");
+
     dim3 dimBlock = getOptimalBlockDim(width, height);
     dim3 dimGrid(cdiv(width, dimBlock.x), cdiv(height, dimBlock.y));
+
+    nvtxRangePop();
+    nvtxRangePushA("Empty container creation");
 
     auto result = torch::empty({height, width, channels}, 
                               torch::TensorOptions().dtype(torch::kByte).device(img.device()));
 
+    nvtxRangePop();
+    nvtxRangePushA("Shared memory calculation");
+
     size_t shared_memory = (dimBlock.x + 2) * (dimBlock.y + 2) * sizeof(unsigned char);
 
+    nvtxRangePop();
+    nvtxRangePushA("Median blur algorithm");
+
     if (KERNEL_SIZE == 3) { 
-        nvtxRangePushA("CUDA kernel medianBlur for 3x3 kernel");
 
         medianBlurKernel<<<dimGrid, dimBlock, shared_memory, at::cuda::getCurrentCUDAStream()>>>(
             img.data_ptr<unsigned char>(), 
             result.data_ptr<unsigned char>(), 
             width, height, channels, KERNEL_SIZE);
 
-        nvtxRangePop();
     }
     else {
         Pixel* in_ptr = img.data_ptr<Pixel>(); 
@@ -154,8 +169,6 @@ torch::Tensor median_blur(torch::Tensor img, int KERNEL_SIZE) {
         thrust::counting_iterator<int> first(0);
         thrust::counting_iterator<int> last = first + (height * width * channels);
         thrust::device_ptr<Pixel> out_ptr(result.data_ptr<Pixel>());
-
-        nvtxRangePushA("Thrust medianBlur for bigger kernels");
 
         thrust::transform(thrust::device, first, last, out_ptr, [=] __device__ (int idx) -> Pixel {
                 int which_channel = idx % channels_int;
@@ -201,11 +214,7 @@ torch::Tensor median_blur(torch::Tensor img, int KERNEL_SIZE) {
                 return kernel[int(MAX_KERNEL_AREA / 2)];
             }
         );
-
-        nvtxRangePop();
     }
-
-    nvtxRangePushA("cudaDeviceSynchronize");
     cudaDeviceSynchronize();
     nvtxRangePop();
 
